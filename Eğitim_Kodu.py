@@ -1,10 +1,14 @@
 import os
 import numpy as np
 import librosa
-import soundfile as sf
-from sklearn.preprocessing import LabelEncoder
-from tensorflow.keras import layers, models
 import json
+import matplotlib.pyplot as plt
+from sklearn.preprocessing import LabelEncoder
+from sklearn.metrics import classification_report, roc_curve, auc, confusion_matrix, f1_score
+from sklearn.metrics import precision_recall_curve, PrecisionRecallDisplay
+from tensorflow.keras import layers, models
+from tensorflow.keras.callbacks import History
+from itertools import cycle
 
 # Ses dosyaları ve transkriptlerin bulunduğu dizinler
 audio_dir = 'audio_files/'
@@ -87,7 +91,7 @@ try:
 
     # Modeli eğitme
     print(f"Training model")
-    model.fit(audio_data, y_encoded, epochs=50, batch_size=16, validation_split=0.2)
+    history = model.fit(audio_data, y_encoded, epochs=50, batch_size=16, validation_split=0.2)
 
     # Modeli kaydetme
     print(f"Saving model")
@@ -98,6 +102,65 @@ try:
         np.save(f, label_encoder.classes_)
 
     print("Model and labels saved successfully.")
+
+    # Eğitim metriklerini değerlendirme
+    print(f"Evaluating model")
+    y_pred = model.predict(audio_data)
+    y_pred_labels = np.argmax(y_pred, axis=1)
+
+    # Classification report (Doğruluk, Kesinlik, Hassaslık, F1 Skoru)
+    print(f"Classification report:")
+    report = classification_report(y_encoded, y_pred_labels, target_names=label_encoder.classes_, zero_division=0)
+    print(report)
+    
+    # Confusion matrix
+    print(f"Confusion Matrix:")
+    conf_matrix = confusion_matrix(y_encoded, y_pred_labels)
+    print(conf_matrix)
+    
+    # Çok sınıflı AUC-ROC Eğrisi
+    print(f"Plotting AUC-ROC curve for multiclass classification")
+    fpr = dict()
+    tpr = dict()
+    roc_auc = dict()
+    for i in range(len(label_encoder.classes_)):
+        fpr[i], tpr[i], _ = roc_curve(y_encoded, y_pred[:, i], pos_label=i)
+        roc_auc[i] = auc(fpr[i], tpr[i])
+    
+    colors = cycle(['aqua', 'darkorange', 'cornflowerblue'])
+    plt.figure()
+    for i, color in zip(range(len(label_encoder.classes_)), colors):
+        plt.plot(fpr[i], tpr[i], color=color, lw=2,
+                 label='ROC curve of class {0} (area = {1:0.2f})'
+                 ''.format(label_encoder.classes_[i], roc_auc[i]))
+
+    plt.plot([0, 1], [0, 1], 'k--', lw=2)
+    plt.xlim([0.0, 1.0])
+    plt.ylim([0.0, 1.05])
+    plt.xlabel('False Positive Rate')
+    plt.ylabel('True Positive Rate')
+    plt.title('Receiver Operating Characteristic for multiclass')
+    plt.legend(loc="lower right")
+    plt.show()
+
+    # Kaybın Değişimi
+    print(f"Plotting loss over epochs")
+    plt.figure()
+    plt.plot(history.history['loss'], label='Loss')
+    plt.plot(history.history['val_loss'], label='Validation Loss')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.show()
+    
+    # Hiperparametrelerin Değeri ve Etkisi
+    print(f"Hyperparameters:")
+    print(f"Learning rate: {model.optimizer.learning_rate.numpy()}")
+    print(f"Batch size: {16}")
+    print(f"Epochs: {50}")
+    print(f"Model evaluation metrics:")
+    print(f"Final accuracy: {history.history['accuracy'][-1]}")
+    print(f"Final validation accuracy: {history.history['val_accuracy'][-1]}")
 
 except ValueError as ve:
     print(f"ValueError: {ve}")
